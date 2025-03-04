@@ -58,6 +58,11 @@ class AMS(nn.Module):
         self.register_buffer("std", torch.tensor([1.0]))  # 注册一个标准差张量作为缓冲区，初始值为1.0
         assert (self.k <= self.num_experts)  # 断言，确保k值小于等于专家数量
 
+        # 在 AMS 类初始化时定义 ModernTCN
+        self.modern_tcn = ModernTCN.Model(self.configs).float().to(device)
+        # self.model2 = ModernTCN.Model(self.configs).float().to(device)
+
+
     def cv_squared(self, x):
         """
         计算变异系数的平方（Coefficient of Variation squared）
@@ -226,7 +231,7 @@ class AMS(nn.Module):
         #print(f'\n    ams——4. 通过多尺度聚合器，得到output\n            {output.shape}')
 
         output = dispatcher.combine(expert_inputs)     # 多尺度聚合器 （不加注意力，直接调节聚合器的位置
-        #print(f'\n    ams——3.2 通过多尺度聚合器，得到output\n            {output.shape}')
+        # print(f'\n    ams——3.2 通过多尺度聚合器，得到output\n            {output.shape}')   # torch.Size([32, 405, 61, 2])
 
         # 假设 output 是一个包含多个元素的列表，这些元素可能是张量或张量列表
         # for i in range(self.configs.d_model):
@@ -236,26 +241,32 @@ class AMS(nn.Module):
         # ======== 加入 moderntcn：d_model层特征，分别投入 各个moderntcn =======
         # 存储不同周期的结果
         res = []
-        for i in range(self.configs.d_model):
-            #print(f'\n    modernTCN----{i}')
-            # 加入 modernTCN
-            device = torch.device('cuda:{}'.format(self.configs.gpu))
 
-            # 【加入 modernTCN】
-            self.model2 = ModernTCN.Model(self.configs).float().to(device)
-            # output  = self.model2(output, None, None)
-            out  = self.model2(output[:, :, :, i], padding_mask, None, None)
+        # 【3.4以前】
+        # for i in range(self.configs.d_model):
+        #     # print(f'\n    modernTCN----{i}')
+   
 
-            #print('\n modernTCN----', {i}, ' 结果： ',{out.shape})
-            # 保存结果
-            res.append(out)
+        #     # 【加入 modernTCN】# 3.4以前的代码
+        #     # 加入 modernTCN
+        #     device = torch.device('cuda:{}'.format(self.configs.gpu))
+        #     self.model2 = ModernTCN.Model(self.configs).float().to(device)     
+        #     out  = self.model2(output[:, :, :, i], padding_mask, None, None)   # 3.4以前的代码
 
-        # 沿着周期轴堆叠不同周期的卷积结果 
-        res = torch.stack(res, dim=-1)
-        #print(' ===== ')
-        #print(f'\n res结果\n   {res.shape}')
+        # #     # 【3.04 ds 给的建议】
+        # #     # 在 forward 函数中统一处理所有特征
+        # #     out = self.modern_tcn(output[:, :, :, i], padding_mask, None, None)  
+
+        #     print('\n modernTCN----', {i}, ' 结果： ',{out.shape})
+        # #     # 保存结果
+        #     res.append(out)
+
+        # # 沿着周期轴堆叠不同周期的卷积结果 
+        # res = torch.stack(res, dim=-1)
+        # print(' ===== ')
+        # print(f'\n res结果\n   {res.shape}')
 
         # if self.residual_connection:
-        #     output = res + x
-        #print(f'\n    ams——5. 残差和，加上原来的x后，output\n            {output.shape}')
+            # output = res + x
+        # print(f'\n    ams——5. 残差和，加上原来的x后，output\n            {output.shape}')
         return output, balance_loss
