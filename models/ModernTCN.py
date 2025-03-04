@@ -760,7 +760,7 @@ class Model(nn.Module):
         """
         #print(f'\n\nM  进入 ModernTCN 任务-------')
 
-        #print(f'\nM  1.x 大小，原始数据:\n      {x.shape}')     # torch.Size([8, 405, 61, 4])
+        # print(f'\nM  1.x 大小，原始数据:\n      {x.shape}')     # torch.Size([8, 405, 61, 4])
 
         # 对输入x进行维度置换，以适配模型的输入要求
         x = x.permute(0, 2, 1)        

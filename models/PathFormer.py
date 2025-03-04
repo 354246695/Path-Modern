@@ -8,6 +8,8 @@ from layers.Layer import WeightGenerator, CustomLinear
 from layers.RevIN import RevIN
 from functools import reduce
 from operator import mul
+from models import ModernTCN
+
 
 # 定义模型类，继承自PyTorch的nn.Module
 class Model(nn.Module):
@@ -55,6 +57,10 @@ class Model(nn.Module):
         # =======  1. 尝试，套用timesnet =======
         self.projection = nn.Linear(configs.d_model * configs.seq_len * configs.num_nodes, configs.num_class)
 
+        # 【3.4 ds建议】
+        # self.modern_tcn = ModernTCN.Model(self.configs).float().to(device)
+        self.tcn = ModernTCN.Model(configs)  # 添加最终TCN层
+
     # 前向传播函数
     def forward(self, x, padding_mask):
         balance_loss = 0  # 平衡损失初始化
@@ -83,8 +89,30 @@ class Model(nn.Module):
             #print(f'\n2.第{nums_ams}层ams 之后 out大小\n   {out.shape}')
             #print(' ------ ')
 
+        # # 【3.4 ds】
+        # # 统一时序建模 (关键修改点)
+        # print(f'\nout ============ \n      {out.shape}')     #  torch.Size([32, 405, 61, 2])
+        # out = torch.stack(out, dim=-1)  # 为了匹配 维度
+        # out = self.tcn(
+        #     out[:, :, :, 0],  # [B, L, D, S] -> [B, S, D, L]
+        #     padding_mask,
+        #     None, None)
+        
+        res = []
+        for i in range(out.shape[-1]):
+            out = self.tcn(out[:, :, :, i],  # [B, L, D, S] -> [B, S, D, L]
+                            padding_mask, None, None
+                            )
+            print(f'\nout {i} ============ \n{out.shape}')     #  torch.Size([32, 405, 61, 2])
+            res.append(out)
 
-        out = out.permute(0,2,1,3).reshape(batch_size, self.num_nodes, -1)  # 调整输出形状
+        # 沿着周期轴堆叠不同周期的卷积结果 
+        res = torch.stack(res, dim=-1)
+        print(f'\n res结果\n   {res.shape}')
+            
+
+        # 3.4以前
+        # out = out.permute(0,2,1,3).reshape(batch_size, self.num_nodes, -1)  # 调整输出形状
         # print(f'\n\n3. ams后调整输出大小 \n   {out.shape}')
 
         # =======  0. 原方案，预测任务 =======
@@ -101,11 +129,11 @@ class Model(nn.Module):
 
 
         # =======  1. 尝试，套用timesnet =======
-        # 重塑输出以适配投影层
-        out = out.reshape(out.shape[0], -1)
-        #print(f'\n       reshape \n   {out.shape}')
-        out = self.projection(out)  # 投影到类别数维度
-        #print(f'\n      最后，投影到类别数维度 \n   {out.type} : {out.shape}')
+        # # 重塑输出以适配投影层
+        # out = out.reshape(out.shape[0], -1)
+        # #print(f'\n       reshape \n   {out.shape}')
+        # out = self.projection(out)  # 投影到类别数维度
+        # #print(f'\n      最后，投影到类别数维度 \n   {out.type} : {out.shape}')
 
 
         return out, balance_loss  # 返回输出和平衡损失
